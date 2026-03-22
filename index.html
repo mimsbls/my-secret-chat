@@ -14,16 +14,27 @@
         
         #chat-header { background: #075e54; color: white; padding: 15px; text-align: center; font-size: 20px; font-weight: bold; box-shadow: 0 2px 5px rgba(0,0,0,0.2); z-index: 1001; }
         
-        /* Fixed scroll and extra padding for mobile keyboard */
         #messages { flex: 1; overflow-y: auto; padding: 15px; display: flex; flex-direction: column; gap: 12px; background: #e5ddd5; padding-bottom: 150px; scroll-behavior: smooth; }
         
-        .msg { background: white; padding: 10px 14px; border-radius: 10px; max-width: 85%; width: fit-content; box-shadow: 0 1px 2px rgba(0,0,0,0.1); word-wrap: break-word; align-self: flex-start; transition: opacity 0.4s ease, transform 0.3s ease; }
+        /* Swipe Background & Wrapper */
+        .msg-wrapper { position: relative; width: 100%; display: flex; flex-direction: column; }
+        .swipe-bg { position: absolute; left: 10px; top: 50%; transform: translateY(-50%) scale(0); opacity: 0; transition: transform 0.2s, opacity 0.2s; color: #075e54; font-size: 20px; }
+        .swipe-active .swipe-bg { transform: translateY(-50%) scale(1); opacity: 1; }
+
+        .msg { background: white; padding: 10px 14px; border-radius: 10px; max-width: 85%; width: fit-content; box-shadow: 0 1px 2px rgba(0,0,0,0.1); word-wrap: break-word; align-self: flex-start; z-index: 1; will-change: transform; transition: transform 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.1); }
         .msg.me { align-self: flex-end; background: #dcf8c6; }
         .msg b { color: #075e54; display: block; font-size: 11px; margin-bottom: 4px; }
-        .msg img { width: 100%; border-radius: 8px; margin-top: 8px; max-height: 300px; display: block; object-fit: cover; cursor: pointer; }
         
-        #input-area { background: #f0f2f5; padding: 10px; display: flex; align-items: center; gap: 8px; border-top: 1px solid #ccc; position: fixed; bottom: 0; left: 0; width: 100%; z-index: 1000; padding-bottom: max(10px, env(safe-area-inset-bottom)); }
+        /* Simple Reply Box in Chat */
+        .reply-container { background: rgba(0,0,0,0.05); border-left: 4px solid #075e54; padding: 5px 8px; margin-bottom: 5px; border-radius: 4px; font-size: 13px; color: #555; }
         
+        #input-area-container { position: fixed; bottom: 0; left: 0; width: 100%; z-index: 1000; background: #f0f2f5; }
+        
+        #reply-preview { display: none; background: #e2e2e2; padding: 8px 15px; border-left: 5px solid #075e54; justify-content: space-between; align-items: center; }
+        #reply-preview span { font-size: 13px; color: #333; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        #reply-preview button { border: none; background: none; font-weight: bold; color: red; font-size: 18px; cursor: pointer; }
+
+        #input-area { padding: 10px; display: flex; align-items: center; gap: 8px; border-top: 1px solid #ccc; padding-bottom: max(10px, env(safe-area-inset-bottom)); }
         input[type="text"] { flex: 1; padding: 12px 18px; border: none; border-radius: 25px; outline: none; font-size: 16px; background: white; }
         
         .btn { border: none; border-radius: 50%; cursor: pointer; display: flex; align-items: center; justify-content: center; color: white; flex-shrink: 0; }
@@ -33,6 +44,7 @@
         #upload-overlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); z-index: 2000; flex-direction: column; align-items: center; justify-content: center; color: white; }
         .loader { border: 4px solid #f3f3f3; border-top: 4px solid #3498db; border-radius: 50%; width: 40px; height: 40px; animation: spin 1s linear infinite; margin-bottom: 10px; }
         @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        .msg img { width: 100%; border-radius: 8px; margin-top: 8px; max-height: 300px; display: block; object-fit: cover; cursor: pointer; }
     </style>
 </head>
 <body>
@@ -42,20 +54,25 @@
 
 <div id="upload-overlay">
     <div class="loader"></div>
-    <div id="statusText">Uploading Photo...</div>
+    <div id="statusText">Uploading...</div>
 </div>
 
-<div id="input-area">
-    <input type="file" id="fileInput" style="display:none" accept="image/*">
-    <button class="btn file-btn" onclick="document.getElementById('fileInput').click()">+</button>
-    <input type="text" id="msgText" placeholder="Write a message..." autocomplete="off">
-    <button id="sendBtn" class="btn" onclick="sendMessage()">➤</button>
+<div id="input-area-container">
+    <div id="reply-preview">
+        <span id="reply-text"></span>
+        <button onclick="cancelReply()">×</button>
+    </div>
+    <div id="input-area">
+        <input type="file" id="fileInput" style="display:none" accept="image/*">
+        <button class="btn file-btn" onclick="document.getElementById('fileInput').click()">+</button>
+        <input type="text" id="msgText" placeholder="Write a message..." autocomplete="off">
+        <button id="sendBtn" class="btn" onclick="sendMessage()">➤</button>
+    </div>
 </div>
 
 <audio id="notifSound" src="https://assets.mixkit.co/active_storage/sfx/2358/2358-preview.mp3" preload="auto"></audio>
 
 <script>
-    // Firebase Config
     const firebaseConfig = {
         apiKey: "AIzaSyDdVehk5T4jyBurH5s0HLrfwvi-unESMMs",
         authDomain: "lets-reveal-8602d.firebaseapp.com",
@@ -67,127 +84,105 @@
     firebase.initializeApp(firebaseConfig);
     const db = firebase.firestore();
     const myName = "Anon-" + Math.floor(Math.random() * 10000);
-    const imgbbKey = "16a0ea2b07218caafa04e2ac8dffbe1c"; // Aapki Updated Key
+    const imgbbKey = "16a0ea2b07218caafa04e2ac8dffbe1c"; 
     
     let isInitialLoad = true;
+    let replyToData = null;
 
-    firebase.auth().signInAnonymously().catch(e => console.log(e));
+    firebase.auth().signInAnonymously();
 
-    // Unlock sound on first touch (Mobile rule)
-    document.addEventListener('touchstart', function unlock() {
-        const audio = document.getElementById('notifSound');
-        audio.play().then(() => { audio.pause(); audio.currentTime = 0; });
-        if (Notification.permission === "default") Notification.requestPermission();
-        document.removeEventListener('touchstart', unlock);
-    }, { passive: false });
+    let startX = 0;
+    let currentX = 0;
+    let activeId = null;
 
-    // REAL-TIME SYNC (ADD & DELETE)
     db.collection("messages").orderBy("createdAt", "asc").onSnapshot((snapshot) => {
         const msgBox = document.getElementById('messages');
-        
         snapshot.docChanges().forEach((change) => {
-            // Addition
             if (change.type === "added") {
                 const data = change.doc.data();
                 const docId = change.doc.id;
                 const isMe = data.user === myName;
                 
-                let html = `<div class="msg ${isMe ? 'me' : ''}" id="msg-${docId}"><b>${data.user}</b>${data.text || ""}`;
-                if (data.fileUrl) {
-                    html += `<img src="${data.fileUrl}" onclick="window.open('${data.fileUrl}')">`;
+                const wrapper = document.createElement('div');
+                wrapper.className = 'msg-wrapper';
+                wrapper.id = `wrap-${docId}`;
+                
+                let html = `<div class="swipe-bg">↩</div><div class="msg ${isMe ? 'me' : ''}" id="msg-${docId}">`;
+                if (data.replyTo) {
+                    html += `<div class="reply-container"><b>${data.replyTo.user}</b>${data.replyTo.text}</div>`;
                 }
+                html += `<b>${data.user}</b>${data.text || ""}`;
+                if (data.fileUrl) html += `<img src="${data.fileUrl}" onclick="window.open('${data.fileUrl}')">`;
                 html += `</div>`;
                 
-                msgBox.insertAdjacentHTML('beforeend', html);
+                wrapper.innerHTML = html;
+                const msgEl = wrapper.querySelector('.msg');
+                msgEl.addEventListener('touchstart', (e) => { startX = e.touches[0].clientX; activeId = docId; msgEl.style.transition = 'none'; }, {passive: true});
+                msgEl.addEventListener('touchmove', (e) => {
+                    if (activeId !== docId) return;
+                    currentX = e.touches[0].clientX - startX;
+                    if (currentX > 0 && currentX < 120) {
+                        msgEl.style.transform = `translateX(${Math.pow(currentX, 0.85)}px)`;
+                        if (currentX > 50) wrapper.classList.add('swipe-active');
+                        else wrapper.classList.remove('swipe-active');
+                    }
+                }, {passive: true});
+                msgEl.addEventListener('touchend', () => {
+                    msgEl.style.transition = 'transform 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275)';
+                    msgEl.style.transform = `translateX(0px)`;
+                    if (currentX > 60) {
+                        const user = msgEl.querySelector('b').innerText;
+                        let text = msgEl.innerText.replace(user, "").replace(/\n/g, " ").trim();
+                        prepareReply(user, text);
+                    }
+                    wrapper.classList.remove('swipe-active');
+                    currentX = 0; activeId = null;
+                }, {passive: true});
+
+                msgBox.appendChild(wrapper);
                 msgBox.scrollTop = msgBox.scrollHeight;
 
-                if (!isInitialLoad && !isMe) {
-                    document.getElementById('notifSound').play().catch(()=>{});
-                    if (document.hidden && Notification.permission === "granted") {
-                        new Notification("Let's Reveal", { body: `${data.user}: ${data.text || 'Photo bheji hai'}` });
-                    }
-                }
+                if (!isInitialLoad && !isMe) document.getElementById('notifSound').play().catch(()=>{});
             }
-            
-            // Real-time Delete (No refresh needed)
-            if (change.type === "removed") {
-                const targetId = change.doc.id;
-                const element = document.getElementById(`msg-${targetId}`);
-                if (element) {
-                    element.style.transform = "scale(0.8)";
-                    element.style.opacity = "0";
-                    setTimeout(() => element.remove(), 400);
-                }
-            }
+            if (change.type === "removed") document.getElementById(`wrap-${change.doc.id}`)?.remove();
         });
         isInitialLoad = false;
     });
 
-    // ImgBB Upload
-    function uploadToImgBB(file) {
-        return new Promise((resolve, reject) => {
-            const xhr = new XMLHttpRequest();
-            const fd = new FormData();
-            fd.append("image", file);
-            xhr.open("POST", `https://api.imgbb.com/1/upload?key=${imgbbKey}`);
-            xhr.onload = () => {
-                const res = JSON.parse(xhr.responseText);
-                if (res.success) resolve(res.data.url);
-                else reject();
-            };
-            xhr.onerror = () => reject();
-            xhr.send(fd);
-        });
+    function prepareReply(user, text) {
+        replyToData = { user, text: text.substring(0, 50) + (text.length > 50 ? '...' : '') };
+        document.getElementById('reply-text').innerText = `Replying to ${user}`;
+        document.getElementById('reply-preview').style.display = 'flex';
+        document.getElementById('msgText').focus();
     }
+
+    function cancelReply() { replyToData = null; document.getElementById('reply-preview').style.display = 'none'; }
 
     async function sendMessage() {
         const textIn = document.getElementById('msgText');
         const fileIn = document.getElementById('fileInput');
         const overlay = document.getElementById('upload-overlay');
-        
-        const textValue = textIn.value.trim();
+        const msg = textIn.value.trim();
         const file = fileIn.files[0];
-        
-        if (!textValue && !file) return;
-
+        if (!msg && !file) return;
         textIn.disabled = true;
         let url = "";
-
         try {
             if (file) {
                 overlay.style.display = "flex";
-                url = await uploadToImgBB(file);
+                const fd = new FormData(); fd.append("image", file);
+                const res = await fetch(`https://api.imgbb.com/1/upload?key=${imgbbKey}`, { method: "POST", body: fd });
+                const json = await res.json(); url = json.data.url;
                 overlay.style.display = "none";
             }
-
             await db.collection("messages").add({
-                user: myName,
-                text: textValue,
-                fileUrl: url,
-                createdAt: firebase.firestore.FieldValue.serverTimestamp()
+                user: myName, text: msg, fileUrl: url, replyTo: replyToData, createdAt: firebase.firestore.FieldValue.serverTimestamp()
             });
-
-            textIn.value = "";
-            fileIn.value = "";
-        } catch (e) {
-            alert("Upload failed! API key ya internet check karein.");
-            overlay.style.display = "none";
-        } finally {
-            textIn.disabled = false;
-            textIn.focus();
-        }
+            textIn.value = ""; fileIn.value = ""; cancelReply();
+        } catch (e) { alert("Error!"); overlay.style.display = "none"; } finally { textIn.disabled = false; }
     }
 
-    document.getElementById('msgText').addEventListener('keypress', (e) => {
-        if (e.key === 'Enter') sendMessage();
-    });
-
-    // Keyboard Scroll Fix (Visual Viewport API)
-    if (window.visualViewport) {
-        window.visualViewport.addEventListener('resize', () => {
-            document.getElementById('messages').scrollTop = document.getElementById('messages').scrollHeight;
-        });
-    }
+    document.getElementById('msgText').addEventListener('keypress', (e) => { if (e.key === 'Enter') sendMessage(); });
 </script>
 </body>
 </html>
