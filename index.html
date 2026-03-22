@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Let's Reveal</title>
+    <!-- Firebase SDKs -->
     <script src="https://www.gstatic.com/firebasejs/9.10.0/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.10.0/firebase-firestore-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.10.0/firebase-auth-compat.js"></script>
@@ -66,12 +67,15 @@
     firebase.initializeApp(firebaseConfig);
     const db = firebase.firestore();
     const myName = "Anon-" + Math.floor(Math.random() * 10000);
-    const imgbbKey = "8c8b6710b91d7946808778f310f8df92";
+    
+    // Nayi API Key update kar di gayi hai
+    const imgbbKey = "16a0ea2b07218caafa04e2ac8dffbe1c"; 
+    
     let isInitialLoad = true;
 
     firebase.auth().signInAnonymously().catch(e => console.log(e));
 
-    // Sabse Important: User touch par sound aur notif unlock karna
+    // User touch par sound aur notif unlock karna
     document.addEventListener('touchstart', function unlock() {
         const audio = document.getElementById('notifSound');
         audio.play().then(() => { audio.pause(); audio.currentTime = 0; });
@@ -79,7 +83,7 @@
         document.removeEventListener('touchstart', unlock);
     }, { passive: false });
 
-    // Live Messages
+    // Live Messages Listener
     db.collection("messages").orderBy("createdAt", "asc").onSnapshot((snapshot) => {
         const msgBox = document.getElementById('messages');
         snapshot.docChanges().forEach((change) => {
@@ -107,19 +111,22 @@
         isInitialLoad = false;
     });
 
-    // ImgBB Upload Function (Standard XHR)
+    // ImgBB Upload Function (Standard XHR for stability)
     function uploadImage(file) {
         return new Promise((resolve, reject) => {
             const xhr = new XMLHttpRequest();
             const formData = new FormData();
             formData.append("image", file);
+            
             xhr.open("POST", `https://api.imgbb.com/1/upload?key=${imgbbKey}`);
             xhr.onload = () => {
-                const res = JSON.parse(xhr.responseText);
-                if (res.success) resolve(res.data.url);
-                else reject();
+                try {
+                    const res = JSON.parse(xhr.responseText);
+                    if (res.success) resolve(res.data.url);
+                    else reject("API Error: " + res.error.message);
+                } catch(e) { reject("Parse Error"); }
             };
-            xhr.onerror = () => reject();
+            xhr.onerror = () => reject("Network Error");
             xhr.send(formData);
         });
     }
@@ -129,9 +136,12 @@
         const fileIn = document.getElementById('fileInput');
         const overlay = document.getElementById('upload-overlay');
         
-        if (!textIn.value.trim() && !fileIn.files[0]) return;
-
+        const messageText = textIn.value.trim();
         const file = fileIn.files[0];
+        
+        if (!messageText && !file) return;
+
+        textIn.disabled = true;
         let url = "";
 
         try {
@@ -143,7 +153,7 @@
 
             await db.collection("messages").add({
                 user: myName,
-                text: textIn.value,
+                text: messageText,
                 fileUrl: url,
                 createdAt: firebase.firestore.FieldValue.serverTimestamp()
             });
@@ -151,8 +161,12 @@
             textIn.value = "";
             fileIn.value = "";
         } catch (e) {
-            alert("Upload fail ho gaya!");
+            console.error(e);
+            alert("Upload fail ho gaya! API Key ya Internet check karein.");
             overlay.style.display = "none";
+        } finally {
+            textIn.disabled = false;
+            textIn.focus();
         }
     }
 
@@ -160,10 +174,11 @@
         if (e.key === 'Enter') sendMessage();
     });
 
-    // Keyboard khulne par scroll fix
+    // Keyboard khulne par scroll fix (Visual Viewport API)
     if (window.visualViewport) {
         window.visualViewport.addEventListener('resize', () => {
-            document.getElementById('messages').scrollTop = document.getElementById('messages').scrollHeight;
+            const msgBox = document.getElementById('messages');
+            msgBox.scrollTop = msgBox.scrollHeight;
         });
     }
 </script>
